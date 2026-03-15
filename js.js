@@ -1,5 +1,5 @@
 const carouselData = new WeakMap();
-
+ 
 function initInfiniteCarousel(selector) {
   const slider = document.querySelector(selector);
   if (!slider) return;
@@ -8,7 +8,12 @@ function initInfiniteCarousel(selector) {
 
   let data = carouselData.get(slider);
   if (!data) {
-    data = { dragAttached: false, scrollHandler: null, resizeAttached: false };
+    data = {
+      dragAttached: false,
+      scrollHandler: null,
+      resizeAttached: false,
+      isDragging: false,
+    };
     carouselData.set(slider, data);
   }
 
@@ -19,19 +24,19 @@ function initInfiniteCarousel(selector) {
       if (!el.hasAttribute('data-original')) slider.removeChild(el);
     });
   } else {
-    Array.from(slider.children).forEach(el => el.setAttribute('data-original','true'));
+    Array.from(slider.children).forEach(el => el.setAttribute('data-original', 'true'));
   }
   const originals = Array.from(slider.children).filter(el => el.hasAttribute('data-original'));
 
   // --- del old scroll handler ---
   if (data.scrollHandler) slider.removeEventListener('scroll', data.scrollHandler);
 
-  // --- clones count ---
+  // --- count of copies ---
   const totalOriginalWidth = originals.reduce((sum, el) => sum + el.offsetWidth + gap, 0);
   let copies = 1;
   while (totalOriginalWidth * copies < slider.clientWidth * 3) copies++;
 
-  // --- clone ---
+  // --- clones ---
   for (let i = 0; i < copies; i++) {
     originals.forEach(el => {
       const c = el.cloneNode(true);
@@ -47,62 +52,96 @@ function initInfiniteCarousel(selector) {
     });
   }
 
-  // --- original's border ---
+  // --- original borders ---
   const totalWidth = originals.reduce((sum, el) => sum + el.offsetWidth + gap, 0);
-  const leftBoundary = totalWidth * copies;          // original start
-  const rightBoundary = totalWidth * (copies + 1);   // original end
-  const totalWidthAll = totalWidth * (2 * copies + 1); // full width
+  const leftBoundary = totalWidth * copies;          
+  const rightBoundary = totalWidth * (copies + 1);   
+  const totalWidthAll = totalWidth * (2 * copies + 1); 
 
-  // --- drag  ---
+  // --- Drag and rescroll ---
   if (!data.dragAttached) {
-    let isDown = false;
-    let isDragging = false; 
-    let startX, scrollLeft;
+    let isDown = false;          
+    let startX, scrollLeft;      
+    let touchStartY = 0;         
+    let isHorizontalDrag = false; 
 
     const startDrag = (pageX) => {
       isDown = true;
-      isDragging = true;
       startX = pageX;
       scrollLeft = slider.scrollLeft;
     };
 
     const moveDrag = (pageX) => {
       if (!isDown) return;
-      const x = pageX;
-      slider.scrollLeft = scrollLeft + (startX - x);
+      slider.scrollLeft = scrollLeft + (startX - pageX);
     };
 
     const endDrag = () => {
       if (!isDown) return;
       isDown = false;
-      isDragging = false;
+      data.isDragging = false;   
+      isHorizontalDrag = false;  
 
-      // Check distance to border
+      // Distance to edge
       if (slider.scrollLeft < slider.clientWidth) {
-        // Too close - change
         slider.scrollLeft += totalWidth;
       } else if (slider.scrollLeft > totalWidthAll - slider.clientWidth) {
-        // Too close - change
         slider.scrollLeft -= totalWidth;
       }
     };
 
-    // Mouse
-    slider.addEventListener('mousedown', (e) => startDrag(e.pageX));
+    // --- Mouse ---
+    slider.addEventListener('mousedown', (e) => {
+      startDrag(e.pageX);
+      data.isDragging = true;  
+    });
     window.addEventListener('mouseup', endDrag);
     slider.addEventListener('mousemove', (e) => {
-      e.preventDefault();
+      if (!isDown) return;
+      e.preventDefault();        
       moveDrag(e.pageX);
     });
 
-    // Touch
+    // --- Touch ---
     slider.addEventListener('touchstart', (e) => {
-      startDrag(e.touches[0].pageX);
+      const touch = e.touches[0];
+      touchStartY = touch.pageY;        
+      startDrag(touch.pageX);            
+      isHorizontalDrag = false;          
     }, { passive: true });
+
     slider.addEventListener('touchmove', (e) => {
-      e.preventDefault();
-      moveDrag(e.touches[0].pageX);
+      if (!isDown) return; 
+
+      const touch = e.touches[0];
+      const dx = Math.abs(touch.pageX - startX);
+      const dy = Math.abs(touch.pageY - touchStartY);
+
+      // Check drag direction
+      if (!isHorizontalDrag && !data.isDragging) {
+        if (dx > 5 || dy > 5) {
+          if (dx > dy) {
+            isHorizontalDrag = true;
+            data.isDragging = true;
+            e.preventDefault(); 
+          } else {
+            isDown = false;      
+            data.isDragging = false;
+           
+            return;
+          }
+        } else {
+          return;
+        }
+      }
+
+      // Horizontal drag
+      if (isHorizontalDrag) {
+        e.preventDefault(); 
+        moveDrag(touch.pageX);
+      }
     }, { passive: false });
+
     slider.addEventListener('touchend', endDrag);
     slider.addEventListener('touchcancel', endDrag);
 
@@ -111,8 +150,7 @@ function initInfiniteCarousel(selector) {
 
   // --- infinity ---
   const scrollHandler = () => {
-    // during drug we nothing do for avoid gaps
-    if (data.isDragging) return;
+     if (data.isDragging) return;
 
     if (slider.scrollLeft < leftBoundary) {
       slider.scrollLeft += totalWidth;
