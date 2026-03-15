@@ -1,6 +1,6 @@
 const carouselData = new WeakMap();
 
-function initInfiniteCarousel(selector) {
+function initInfiniteCarousel(selector, infinite = true) {
   const slider = document.querySelector(selector);
   if (!slider) return;
 
@@ -12,53 +12,84 @@ function initInfiniteCarousel(selector) {
     carouselData.set(slider, data);
   }
 
-  // --- originals ---
-  const existingOriginals = Array.from(slider.children).filter(el => el.hasAttribute('data-original'));
-  if (existingOriginals.length) {
-    Array.from(slider.children).forEach(el => {
-      if (!el.hasAttribute('data-original')) slider.removeChild(el);
+  
+  let originals = [];
+  let totalWidth = 0;
+  let leftBoundary = 0, rightBoundary = 0, totalWidthAll = 0;
+  let copies = 0;
+
+  if (infinite) {
+    
+    const existingOriginals = Array.from(slider.children).filter(el => el.hasAttribute('data-original'));
+    if (existingOriginals.length) {
+      Array.from(slider.children).forEach(el => {
+        if (!el.hasAttribute('data-original')) slider.removeChild(el);
+      });
+    } else {
+      Array.from(slider.children).forEach(el => el.setAttribute('data-original', 'true'));
+    }
+    originals = Array.from(slider.children).filter(el => el.hasAttribute('data-original'));
+
+    
+    if (data.scrollHandler) slider.removeEventListener('scroll', data.scrollHandler);
+
+    
+    const totalOriginalWidth = originals.reduce((sum, el) => sum + el.offsetWidth + gap, 0);
+    copies = 1;
+    while (totalOriginalWidth * copies < slider.clientWidth * 3) copies++;
+
+    
+    for (let i = 0; i < copies; i++) {
+      originals.forEach(el => {
+        const c = el.cloneNode(true);
+        c.removeAttribute('data-original');
+        slider.appendChild(c);
+      });
+    }
+    for (let i = 0; i < copies; i++) {
+      [...originals].reverse().forEach(el => {
+        const c = el.cloneNode(true);
+        c.removeAttribute('data-original');
+        slider.insertBefore(c, slider.firstChild);
+      });
+    }
+
+    
+    totalWidth = originals.reduce((sum, el) => sum + el.offsetWidth + gap, 0);
+    leftBoundary = totalWidth * copies;
+    rightBoundary = totalWidth * (copies + 1);
+    totalWidthAll = totalWidth * (2 * copies + 1);
+
+    
+    const scrollHandler = () => {
+      if (slider.scrollLeft < leftBoundary) {
+        slider.scrollLeft += totalWidth;
+      } else if (slider.scrollLeft > rightBoundary) {
+        slider.scrollLeft -= totalWidth;
+      }
+    };
+    slider.addEventListener('scroll', scrollHandler);
+    data.scrollHandler = scrollHandler;
+
+    
+    requestAnimationFrame(() => {
+      const firstWidth = originals[0].offsetWidth;
+      slider.scrollLeft = leftBoundary + firstWidth / 2 - slider.clientWidth / 2;
     });
   } else {
-    Array.from(slider.children).forEach(el => el.setAttribute('data-original', 'true'));
-  }
-  const originals = Array.from(slider.children).filter(el => el.hasAttribute('data-original'));
-
-  // --- del old scroll handler ---
-  if (data.scrollHandler) slider.removeEventListener('scroll', data.scrollHandler);
-
-  // --- copies count ---
-  const totalOriginalWidth = originals.reduce((sum, el) => sum + el.offsetWidth + gap, 0);
-  let copies = 1;
-  while (totalOriginalWidth * copies < slider.clientWidth * 3) copies++;
-
-  // --- clone ---
-  for (let i = 0; i < copies; i++) {
-    originals.forEach(el => {
-      const c = el.cloneNode(true);
-      c.removeAttribute('data-original');
-      slider.appendChild(c);
-    });
-  }
-  for (let i = 0; i < copies; i++) {
-    [...originals].reverse().forEach(el => {
-      const c = el.cloneNode(true);
-      c.removeAttribute('data-original');
-      slider.insertBefore(c, slider.firstChild);
-    });
+    
+    
+    if (data.scrollHandler) {
+      slider.removeEventListener('scroll', data.scrollHandler);
+      data.scrollHandler = null;
+    }
   }
 
-  // --- edges ---
-  const totalWidth = originals.reduce((sum, el) => sum + el.offsetWidth + gap, 0);
-  const leftBoundary = totalWidth * copies;
-  const rightBoundary = totalWidth * (copies + 1);
-  const totalWidthAll = totalWidth * (2 * copies + 1);
-
-  // --- drag ---
   if (!data.dragAttached) {
     let isDown = false;
     let startX, scrollLeft;
     let touchStartY = 0;
-    let isHorizontalDrag = false; 
+    let isHorizontalDrag = false;
 
     const startDrag = (pageX) => {
       isDown = true;
@@ -77,23 +108,25 @@ function initInfiniteCarousel(selector) {
       isHorizontalDrag = false;
 
       
-      if (slider.scrollLeft < slider.clientWidth) {
-        slider.scrollLeft += totalWidth;
-      } else if (slider.scrollLeft > totalWidthAll - slider.clientWidth) {
-        slider.scrollLeft -= totalWidth;
+      if (infinite) {
+        if (slider.scrollLeft < slider.clientWidth) {
+          slider.scrollLeft += totalWidth;
+        } else if (slider.scrollLeft > totalWidthAll - slider.clientWidth) {
+          slider.scrollLeft -= totalWidth;
+        }
       }
     };
 
-    // --- Mouse ---
+    
     slider.addEventListener('mousedown', (e) => startDrag(e.pageX));
     window.addEventListener('mouseup', endDrag);
     slider.addEventListener('mousemove', (e) => {
       if (!isDown) return;
-      e.preventDefault(); 
+      e.preventDefault();
       moveDrag(e.pageX);
     });
 
-    // --- Touch ---
+    
     slider.addEventListener('touchstart', (e) => {
       const touch = e.touches[0];
       touchStartY = touch.pageY;
@@ -108,21 +141,17 @@ function initInfiniteCarousel(selector) {
       const dx = Math.abs(touch.pageX - startX);
       const dy = Math.abs(touch.pageY - touchStartY);
 
-      // Drag direction
       if (!isHorizontalDrag) {
         if (dx > 5 || dy > 5) {
           if (dx > dy) {
-            
             isHorizontalDrag = true;
-            e.preventDefault(); 
+            e.preventDefault();
           } else {
-            
-            isDown = false;
+            isDown = false; 
             return;
           }
         } else {
-          
-          return;
+          return; 
         }
       }
 
@@ -138,26 +167,9 @@ function initInfiniteCarousel(selector) {
     data.dragAttached = true;
   }
 
-  // --- infinity ---
-  const scrollHandler = () => {
-    if (slider.scrollLeft < leftBoundary) {
-      slider.scrollLeft += totalWidth;
-    } else if (slider.scrollLeft > rightBoundary) {
-      slider.scrollLeft -= totalWidth;
-    }
-  };
-  slider.addEventListener('scroll', scrollHandler);
-  data.scrollHandler = scrollHandler;
-
-  // --- center ---
-  requestAnimationFrame(() => {
-    const firstWidth = originals[0].offsetWidth;
-    slider.scrollLeft = leftBoundary + firstWidth / 2 - slider.clientWidth / 2;
-  });
-
-  // --- resize ---
+  
   if (!data.resizeAttached) {
-    window.addEventListener('resize', () => initInfiniteCarousel(selector));
+    window.addEventListener('resize', () => initInfiniteCarousel(selector, infinite));
     data.resizeAttached = true;
   }
 }
