@@ -1,0 +1,19 @@
+.parent {
+	display: flex;
+	gap: 12px;               /* AS YOU WANT */
+	overflow-x: auto;
+	overflow-y: hidden;
+	-webkit-overflow-scrolling: touch;
+	cursor: grab;
+
+	scrollbar-width: none;    /* Firefox */
+	-ms-overflow-style: none; /* IE 10+ */
+}
+.parent:active { cursor: grabbing; }
+.parent > * {
+	height: 60vh;            /* AS YOU WANT */
+	flex: 0 0 auto;
+	user-select: none;
+	pointer-events: none;
+}
+.nye-imgs::-webkit-scrollbar { display: none; } /* Chrome, Safari, Edge */
