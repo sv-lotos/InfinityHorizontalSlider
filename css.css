@@ -12,8 +12,9 @@
 .parent:active { cursor: grabbing; }
 .parent > * {
 	height: 60vh;            /* AS YOU WANT */
+	width: 360px;            /* AS YOU WANT */
 	flex: 0 0 auto;
 	user-select: none;
 	pointer-events: none;
 }
-.nye-imgs::-webkit-scrollbar { display: none; } /* Chrome, Safari, Edge */
+.parent::-webkit-scrollbar { display: none; } /* Chrome, Safari, Edge */
