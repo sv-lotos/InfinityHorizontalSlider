@@ -15,6 +15,5 @@
 	width: 360px;            /* AS YOU WANT */
 	flex: 0 0 auto;
 	user-select: none;
-	pointer-events: none;
 }
 .parent::-webkit-scrollbar { display: none; } /* Chrome, Safari, Edge */
