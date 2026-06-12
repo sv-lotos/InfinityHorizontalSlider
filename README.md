@@ -16,5 +16,5 @@ Any count of children.
     document.addEventListener('DOMContentLoaded', function() {
        initInfiniteCarousel(".parent",0,24);
 	});
-0 - non infinity
+0 - non infinity; 
 24 - 24px/sec autoScroll Speed
