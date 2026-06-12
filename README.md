@@ -1,5 +1,5 @@
 # InfinityHorizontalSlider
-Ultra light horizontal slider. Pure JS + CSS
+Ultra light horizontal slider. Pure JS + CSS.
 
 ## How to use
 HTML example:
@@ -14,5 +14,7 @@ HTML example:
 Any count of children.
 
     document.addEventListener('DOMContentLoaded', function() {
-       initInfiniteCarousel(".parent");
+       initInfiniteCarousel(".parent",0,24);
 	});
+0 - non infinity
+24 - 24px/sec autoScroll Speed
