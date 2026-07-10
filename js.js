@@ -19,19 +19,111 @@ function initInfiniteCarousel(selector, infinite = true, autoSpeed = 0) {
         autoSpeedAbs: 0,
         isMouseOver: false,
         isDragging: false,
-        isInternalScroll: false, 
+        isInternalScroll: false,
         leftBoundary: 0,
         rightBoundary: 0,
         totalWidth: 0,
-        totalWidthAll: 0
+        totalWidthAll: 0,
+        scrollHandler: null,
+        viewportHandler: null,
+        resizeHandler: null,
+        fallbackResizeTimer: null,
+        mousedownHandler: null,
+        mouseupHandler: null,
+        mousemoveHandler: null,
+        touchstartHandler: null,
+        touchmoveHandler: null,
+        touchendHandler: null,
+        touchcancelHandler: null,
+        clickPreventer: null,
+        mouseenterHandler: null,
+        mouseleaveHandler: null
       };
       carouselData.set(slider, data);
     }
 
+    function cleanup() {
+      if (data.autoFrame) {
+        cancelAnimationFrame(data.autoFrame);
+        data.autoFrame = null;
+      }
+
+      if (data.scrollHandler) {
+        slider.removeEventListener('scroll', data.scrollHandler);
+        data.scrollHandler = null;
+      }
+
+      if (data.mousedownHandler) {
+        slider.removeEventListener('mousedown', data.mousedownHandler);
+        data.mousedownHandler = null;
+      }
+      if (data.mouseupHandler) {
+        window.removeEventListener('mouseup', data.mouseupHandler);
+        data.mouseupHandler = null;
+      }
+      if (data.mousemoveHandler) {
+        slider.removeEventListener('mousemove', data.mousemoveHandler);
+        data.mousemoveHandler = null;
+      }
+
+      if (data.touchstartHandler) {
+        slider.removeEventListener('touchstart', data.touchstartHandler);
+        data.touchstartHandler = null;
+      }
+      if (data.touchmoveHandler) {
+        slider.removeEventListener('touchmove', data.touchmoveHandler);
+        data.touchmoveHandler = null;
+      }
+      if (data.touchendHandler) {
+        slider.removeEventListener('touchend', data.touchendHandler);
+        data.touchendHandler = null;
+      }
+      if (data.touchcancelHandler) {
+        slider.removeEventListener('touchcancel', data.touchcancelHandler);
+        data.touchcancelHandler = null;
+      }
+
+      if (data.clickPreventer) {
+        slider.removeEventListener('click', data.clickPreventer, true);
+        data.clickPreventer = null;
+      }
+
+      if (data.mouseenterHandler) {
+        slider.removeEventListener('mouseenter', data.mouseenterHandler);
+        data.mouseenterHandler = null;
+      }
+      if (data.mouseleaveHandler) {
+        slider.removeEventListener('mouseleave', data.mouseleaveHandler);
+        data.mouseleaveHandler = null;
+      }
+
+      if (data.viewportHandler && window.visualViewport) {
+        window.visualViewport.removeEventListener('resize', data.viewportHandler);
+        data.viewportHandler = null;
+      }
+
+      if (data.resizeHandler) {
+        window.removeEventListener('resize', data.resizeHandler);
+        data.resizeHandler = null;
+      }
+      if (data.fallbackResizeTimer) {
+        clearTimeout(data.fallbackResizeTimer);
+        data.fallbackResizeTimer = null;
+      }
+
+      data.isInternalScroll = false;
+      data.isDragging = false;
+      data.isMouseOver = false;
+      data.autoPaused = false;
+      data.dragAttached = false;
+      data.resizeAttached = false;
+    }
+
+    cleanup();
+
     const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) || window.innerWidth < 768;
     const copiesMultiplier = isMobile ? 8 : 3;
 
-   
     let speedPxPerSec = 0;
     if (typeof autoSpeed === 'string' && autoSpeed.endsWith('%')) {
       const percent = parseFloat(autoSpeed);
@@ -43,8 +135,34 @@ function initInfiniteCarousel(selector, infinite = true, autoSpeed = 0) {
     data.autoSpeedAbs = absSpeed;
     data.autoDirection = speedPxPerSec >= 0 ? 1 : -1;
 
-   let originals = [];
+    let originals = [];
     let copies = 0;
+
+    function getDimensions() {
+      if (!infinite) return { total: 0, left: 0, right: 0, all: 0 };
+      const total = originals.reduce((sum, el) => sum + el.offsetWidth + gap, 0);
+      const left = total * copies;
+      const right = total * (copies + 1);
+      const all = total * (2 * copies + 1);
+      return { total, left, right, all };
+    }
+
+    function correctPosition(pos) {
+      if (!infinite) return pos;
+      const dim = getDimensions();
+      const offset = (pos - dim.left) % dim.total;
+      const normalized = offset < 0 ? offset + dim.total : offset;
+      return dim.left + normalized;
+    }
+
+    function setScrollLeft(value, fromDrag = false) {
+      let target = value;
+      if (!fromDrag && infinite) target = correctPosition(target);
+      if (Math.abs(slider.scrollLeft - target) < 0.01) return;
+      data.isInternalScroll = true;
+      slider.scrollLeft = target;
+      data.isInternalScroll = false;
+    }
 
     if (infinite) {
       const existingOriginals = Array.from(slider.children).filter(el => el.hasAttribute('data-original'));
@@ -78,32 +196,6 @@ function initInfiniteCarousel(selector, infinite = true, autoSpeed = 0) {
           c.removeAttribute('data-original');
           slider.insertBefore(c, slider.firstChild);
         });
-      }
-
-      function getDimensions() {
-        const total = originals.reduce((sum, el) => sum + el.offsetWidth + gap, 0);
-        const left = total * copies;
-        const right = total * (copies + 1);
-        const all = total * (2 * copies + 1);
-        return { total, left, right, all };
-      }
-
-     function correctPosition(pos) {
-        const dim = getDimensions();
-        const offset = (pos - dim.left) % dim.total;
-        const normalized = offset < 0 ? offset + dim.total : offset;
-        return dim.left + normalized;
-      }
-
-      function setScrollLeft(value, fromDrag = false) {
-        let target = value;
-        if (!fromDrag && infinite) {
-          target = correctPosition(target);
-        }
-        if (Math.abs(slider.scrollLeft - target) < 0.01) return;
-        data.isInternalScroll = true;
-        slider.scrollLeft = target;
-        data.isInternalScroll = false;
       }
 
       const scrollHandler = () => {
@@ -188,12 +280,14 @@ function initInfiniteCarousel(selector, infinite = true, autoSpeed = 0) {
         stopAutoScroll();
       }
     }
+
     function resumeAutoScroll() {
       if (data.autoPaused && absSpeed && !data.isMouseOver && !data.isDragging) {
         data.autoPaused = false;
         startAutoScroll();
       }
     }
+
     function forceResumeAutoScroll() {
       if (data.autoPaused && absSpeed) {
         data.autoPaused = false;
@@ -212,12 +306,14 @@ function initInfiniteCarousel(selector, infinite = true, autoSpeed = 0) {
         dragHappened = false;
         pauseAutoScroll();
       };
+
       const moveDrag = (pageX) => {
         if (!isDown) return;
         if (Math.abs(pageX - startX) > 3) dragHappened = true;
         const newLeft = scrollLeft + (startX - pageX);
         setScrollLeft(newLeft, true);
       };
+
       const endDrag = () => {
         if (!isDown) return;
         isDown = false;
@@ -243,26 +339,25 @@ function initInfiniteCarousel(selector, infinite = true, autoSpeed = 0) {
           dragHappened = false;
         }
       };
-      slider.addEventListener('click', clickPreventer, true);
 
-      slider.addEventListener('mousedown', (e) => {
+      const mousedownHandler = (e) => {
         e.preventDefault();
         startDrag(e.pageX);
-      });
-      window.addEventListener('mouseup', endDrag);
-      slider.addEventListener('mousemove', (e) => {
+      };
+      const mouseupHandler = endDrag;
+      const mousemoveHandler = (e) => {
         if (!isDown) return;
         e.preventDefault();
         moveDrag(e.pageX);
-      });
+      };
 
-      slider.addEventListener('touchstart', (e) => {
+      const touchstartHandler = (e) => {
         const touch = e.touches[0];
         touchStartY = touch.pageY;
         startDrag(touch.pageX);
         isHorizontalDrag = false;
-      }, { passive: true });
-      slider.addEventListener('touchmove', (e) => {
+      };
+      const touchmoveHandler = (e) => {
         if (!isDown) return;
         const touch = e.touches[0];
         const dx = Math.abs(touch.pageX - startX);
@@ -283,21 +378,43 @@ function initInfiniteCarousel(selector, infinite = true, autoSpeed = 0) {
           if (dx > 3) dragHappened = true;
           moveDrag(touch.pageX);
         }
-      }, { passive: false });
-      slider.addEventListener('touchend', endDrag);
-      slider.addEventListener('touchcancel', endDrag);
+      };
+      const touchendHandler = endDrag;
+      const touchcancelHandler = endDrag;
+
+      data.clickPreventer = clickPreventer;
+      data.mousedownHandler = mousedownHandler;
+      data.mouseupHandler = mouseupHandler;
+      data.mousemoveHandler = mousemoveHandler;
+      data.touchstartHandler = touchstartHandler;
+      data.touchmoveHandler = touchmoveHandler;
+      data.touchendHandler = touchendHandler;
+      data.touchcancelHandler = touchcancelHandler;
+
+      slider.addEventListener('click', clickPreventer, true);
+      slider.addEventListener('mousedown', mousedownHandler);
+      window.addEventListener('mouseup', mouseupHandler);
+      slider.addEventListener('mousemove', mousemoveHandler);
+      slider.addEventListener('touchstart', touchstartHandler, { passive: true });
+      slider.addEventListener('touchmove', touchmoveHandler, { passive: false });
+      slider.addEventListener('touchend', touchendHandler);
+      slider.addEventListener('touchcancel', touchcancelHandler);
 
       data.dragAttached = true;
     }
 
-    slider.addEventListener('mouseenter', () => {
+    const mouseenterHandler = () => {
       data.isMouseOver = true;
       pauseAutoScroll();
-    });
-    slider.addEventListener('mouseleave', () => {
+    };
+    const mouseleaveHandler = () => {
       data.isMouseOver = false;
       if (!data.isDragging) forceResumeAutoScroll();
-    });
+    };
+    data.mouseenterHandler = mouseenterHandler;
+    data.mouseleaveHandler = mouseleaveHandler;
+    slider.addEventListener('mouseenter', mouseenterHandler);
+    slider.addEventListener('mouseleave', mouseleaveHandler);
 
     const allChildren = slider.querySelectorAll('*');
     allChildren.forEach(el => {
@@ -309,7 +426,30 @@ function initInfiniteCarousel(selector, infinite = true, autoSpeed = 0) {
     });
 
     if (!data.resizeAttached) {
-      window.addEventListener('resize', () => initInfiniteCarousel(selector, infinite, autoSpeed));
+      if (window.visualViewport) {
+        let lastWidth = window.visualViewport.width;
+        const viewportHandler = () => {
+          const newWidth = window.visualViewport.width;
+          if (newWidth !== lastWidth) {
+            lastWidth = newWidth;
+            initInfiniteCarousel(selector, infinite, autoSpeed);
+          }
+        };
+        window.visualViewport.addEventListener('resize', viewportHandler);
+        data.viewportHandler = viewportHandler;
+      } else {
+        
+        let resizeTimer;
+        const fallbackHandler = () => {
+          clearTimeout(resizeTimer);
+          resizeTimer = setTimeout(() => {
+            initInfiniteCarousel(selector, infinite, autoSpeed);
+          }, 300);
+        };
+        window.addEventListener('resize', fallbackHandler);
+        data.resizeHandler = fallbackHandler;
+        data.fallbackResizeTimer = resizeTimer;
+      }
       data.resizeAttached = true;
     }
   }
