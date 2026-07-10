@@ -1,10 +1,7 @@
 const carouselData = new WeakMap();
 
 function initInfiniteCarousel(selector, infinite = true, autoSpeed = 0) {
-  const sliders = document.querySelectorAll(selector);
-  if (!sliders.length) return;
-
-  sliders.forEach(slider => {
+  document.querySelectorAll(selector).forEach(slider => {
     initSingleCarousel(slider, infinite, autoSpeed);
   });
 
@@ -15,20 +12,26 @@ function initInfiniteCarousel(selector, infinite = true, autoSpeed = 0) {
     if (!data) {
       data = {
         dragAttached: false,
-        scrollHandler: null,
         resizeAttached: false,
         autoFrame: null,
         autoPaused: false,
         autoDirection: 1,
         autoSpeedAbs: 0,
-        isMouseOver: false
+        isMouseOver: false,
+        isDragging: false,
+        isInternalScroll: false, 
+        leftBoundary: 0,
+        rightBoundary: 0,
+        totalWidth: 0,
+        totalWidthAll: 0
       };
       carouselData.set(slider, data);
     }
 
     const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) || window.innerWidth < 768;
-    const copiesMultiplier = isMobile ? 8 : 3; 
+    const copiesMultiplier = isMobile ? 8 : 3;
 
+   
     let speedPxPerSec = 0;
     if (typeof autoSpeed === 'string' && autoSpeed.endsWith('%')) {
       const percent = parseFloat(autoSpeed);
@@ -40,7 +43,8 @@ function initInfiniteCarousel(selector, infinite = true, autoSpeed = 0) {
     data.autoSpeedAbs = absSpeed;
     data.autoDirection = speedPxPerSec >= 0 ? 1 : -1;
 
-    let originals = [], totalWidth = 0, leftBoundary = 0, rightBoundary = 0, totalWidthAll = 0, copies = 0;
+   let originals = [];
+    let copies = 0;
 
     if (infinite) {
       const existingOriginals = Array.from(slider.children).filter(el => el.hasAttribute('data-original'));
@@ -52,7 +56,10 @@ function initInfiniteCarousel(selector, infinite = true, autoSpeed = 0) {
         Array.from(slider.children).forEach(el => el.setAttribute('data-original', 'true'));
       }
       originals = Array.from(slider.children).filter(el => el.hasAttribute('data-original'));
-      if (data.scrollHandler) slider.removeEventListener('scroll', data.scrollHandler);
+      if (data.scrollHandler) {
+        slider.removeEventListener('scroll', data.scrollHandler);
+        data.scrollHandler = null;
+      }
 
       const totalOriginalWidth = originals.reduce((sum, el) => sum + el.offsetWidth + gap, 0);
       copies = 1;
@@ -73,21 +80,47 @@ function initInfiniteCarousel(selector, infinite = true, autoSpeed = 0) {
         });
       }
 
-      totalWidth = originals.reduce((sum, el) => sum + el.offsetWidth + gap, 0);
-      leftBoundary = totalWidth * copies;
-      rightBoundary = totalWidth * (copies + 1);
-      totalWidthAll = totalWidth * (2 * copies + 1);
+      function getDimensions() {
+        const total = originals.reduce((sum, el) => sum + el.offsetWidth + gap, 0);
+        const left = total * copies;
+        const right = total * (copies + 1);
+        const all = total * (2 * copies + 1);
+        return { total, left, right, all };
+      }
+
+     function correctPosition(pos) {
+        const dim = getDimensions();
+        const offset = (pos - dim.left) % dim.total;
+        const normalized = offset < 0 ? offset + dim.total : offset;
+        return dim.left + normalized;
+      }
+
+      function setScrollLeft(value, fromDrag = false) {
+        let target = value;
+        if (!fromDrag && infinite) {
+          target = correctPosition(target);
+        }
+        if (Math.abs(slider.scrollLeft - target) < 0.01) return;
+        data.isInternalScroll = true;
+        slider.scrollLeft = target;
+        data.isInternalScroll = false;
+      }
 
       const scrollHandler = () => {
-        if (slider.scrollLeft < leftBoundary) slider.scrollLeft += totalWidth;
-        else if (slider.scrollLeft > rightBoundary) slider.scrollLeft -= totalWidth;
+        if (data.isInternalScroll || data.isDragging) return;
+        const current = slider.scrollLeft;
+        const corrected = correctPosition(current);
+        if (Math.abs(corrected - current) > 0.5) {
+          setScrollLeft(corrected, false);
+        }
       };
       slider.addEventListener('scroll', scrollHandler);
       data.scrollHandler = scrollHandler;
 
       requestAnimationFrame(() => {
         const firstWidth = originals[0].offsetWidth;
-        slider.scrollLeft = leftBoundary + firstWidth / 2 - slider.clientWidth / 2;
+        const dim = getDimensions();
+        setScrollLeft(dim.left + firstWidth / 2 - slider.clientWidth / 2, false);
         if (absSpeed) startAutoScroll();
       });
     } else {
@@ -129,9 +162,7 @@ function initInfiniteCarousel(selector, infinite = true, autoSpeed = 0) {
           if (intDelta !== 0) {
             let newLeft = slider.scrollLeft + intDelta;
             if (infinite) {
-              if (newLeft < leftBoundary) newLeft += totalWidth;
-              else if (newLeft > rightBoundary) newLeft -= totalWidth;
-              slider.scrollLeft = newLeft;
+              newLeft = correctPosition(newLeft);
             } else {
               const maxScroll = slider.scrollWidth - slider.clientWidth;
               if (newLeft < 0) {
@@ -141,8 +172,8 @@ function initInfiniteCarousel(selector, infinite = true, autoSpeed = 0) {
                 newLeft = maxScroll - (newLeft - maxScroll);
                 data.autoDirection = -1;
               }
-              slider.scrollLeft = newLeft;
             }
+            setScrollLeft(newLeft, false);
           }
         }
         lastTimestamp = now;
@@ -158,7 +189,7 @@ function initInfiniteCarousel(selector, infinite = true, autoSpeed = 0) {
       }
     }
     function resumeAutoScroll() {
-      if (data.autoPaused && absSpeed && !data.isMouseOver) {
+      if (data.autoPaused && absSpeed && !data.isMouseOver && !data.isDragging) {
         data.autoPaused = false;
         startAutoScroll();
       }
@@ -175,6 +206,7 @@ function initInfiniteCarousel(selector, infinite = true, autoSpeed = 0) {
 
       const startDrag = (pageX) => {
         isDown = true;
+        data.isDragging = true;
         startX = pageX;
         scrollLeft = slider.scrollLeft;
         dragHappened = false;
@@ -183,19 +215,27 @@ function initInfiniteCarousel(selector, infinite = true, autoSpeed = 0) {
       const moveDrag = (pageX) => {
         if (!isDown) return;
         if (Math.abs(pageX - startX) > 3) dragHappened = true;
-        slider.scrollLeft = scrollLeft + (startX - pageX);
+        const newLeft = scrollLeft + (startX - pageX);
+        setScrollLeft(newLeft, true);
       };
       const endDrag = () => {
         if (!isDown) return;
         isDown = false;
         isHorizontalDrag = false;
+        data.isDragging = false;
         if (infinite) {
-          if (slider.scrollLeft < slider.clientWidth) slider.scrollLeft += totalWidth;
-          else if (slider.scrollLeft > totalWidthAll - slider.clientWidth) slider.scrollLeft -= totalWidth;
+          const current = slider.scrollLeft;
+          const corrected = correctPosition(current);
+          if (Math.abs(corrected - current) > 0.5) {
+            setScrollLeft(corrected, false);
+          }
         }
+        setTimeout(() => {
+          if (!data.isMouseOver) resumeAutoScroll();
+        }, 50);
         setTimeout(() => { dragHappened = false; }, 100);
-        if (!data.isMouseOver) resumeAutoScroll();
       };
+
       const clickPreventer = (e) => {
         if (dragHappened) {
           e.preventDefault();
@@ -205,7 +245,10 @@ function initInfiniteCarousel(selector, infinite = true, autoSpeed = 0) {
       };
       slider.addEventListener('click', clickPreventer, true);
 
-      slider.addEventListener('mousedown', (e) => startDrag(e.pageX));
+      slider.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        startDrag(e.pageX);
+      });
       window.addEventListener('mouseup', endDrag);
       slider.addEventListener('mousemove', (e) => {
         if (!isDown) return;
@@ -253,7 +296,7 @@ function initInfiniteCarousel(selector, infinite = true, autoSpeed = 0) {
     });
     slider.addEventListener('mouseleave', () => {
       data.isMouseOver = false;
-      if (!isDown) forceResumeAutoScroll();
+      if (!data.isDragging) forceResumeAutoScroll();
     });
 
     const allChildren = slider.querySelectorAll('*');
